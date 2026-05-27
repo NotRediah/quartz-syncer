@@ -140,15 +140,25 @@ export class PublishFile {
 	}
 
 	/**
+	 * Checks if the file is an Excalidraw file by checking extension or frontmatter.
+	 *
+	 * @returns true if the file is an Excalidraw file, false otherwise.
+	 */
+	isExcalidrawFile(): boolean {
+		return (
+			this.file.name.endsWith(".excalidraw") ||
+			this.file.name.endsWith(".excalidraw.md") ||
+			this.frontmatter?.["excalidraw-plugin"] === "parsed"
+		);
+	}
+
+	/**
 	 * Returns the type of the file based on its extension.
 	 *
 	 * @returns The file type: "excalidraw", "base", "canvas", or "markdown".
 	 */
 	getType(): "excalidraw" | "base" | "canvas" | "markdown" {
-		if (
-			this.file.name.endsWith(".excalidraw") ||
-			this.file.name.endsWith(".excalidraw.md")
-		) {
+		if (this.isExcalidrawFile()) {
 			return "excalidraw";
 		}
 
@@ -177,10 +187,7 @@ export class PublishFile {
 			return this.settings.useCanvas;
 		}
 
-		if (
-			this.file.name.endsWith(".excalidraw") ||
-			this.file.name.endsWith(".excalidraw.md")
-		) {
+		if (this.isExcalidrawFile()) {
 			return this.settings.useExcalidraw;
 		}
 

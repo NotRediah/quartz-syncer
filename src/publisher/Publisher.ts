@@ -79,20 +79,79 @@ export default class Publisher {
 			return this.settings.useCanvas;
 		}
 
+		const frontMatter = this.metadataCache.getCache(file.path)?.frontmatter;
+
 		if (
 			file.path.endsWith(".excalidraw") ||
-			file.path.endsWith(".excalidraw.md")
+			file.path.endsWith(".excalidraw.md") ||
+			frontMatter?.["excalidraw-plugin"] === "parsed"
 		) {
 			return this.settings.useExcalidraw;
 		}
-
-		const frontMatter = this.metadataCache.getCache(file.path)?.frontmatter;
 
 		return hasPublishFlag(
 			this.settings.publishFrontmatterKey,
 			frontMatter,
 			this.settings.allNotesPublishableByDefault,
 		);
+	}
+
+	/**
+	 * Collects all Excalidraw files (both extension-based and frontmatter-based).
+	 *
+	 * @param vaultIsRoot - Whether the vault path is "/".
+	 * @returns An array of Excalidraw files.
+	 */
+	private getExcalidrawFiles(vaultIsRoot: boolean): TFile[] {
+		const extensionBased = this.vault
+			.getMarkdownFiles()
+			.filter(
+				(f) =>
+					(f.path.endsWith(".excalidraw") ||
+						f.path.endsWith(".excalidraw.md")) &&
+					(vaultIsRoot || f.path.startsWith(this.settings.vaultPath)),
+			);
+
+		const extensionPaths = new Set(extensionBased.map((f) => f.path));
+
+		let frontmatterBased: TFile[];
+
+		if (this.extendedCache.isReady) {
+			const candidates =
+				this.extendedCache.api.getFilesWithFrontmatterKey(
+					"excalidraw-plugin",
+				);
+
+			frontmatterBased = [];
+
+			for (const path of candidates) {
+				const file = this.vault.getFileByPath(path);
+
+				if (
+					file &&
+					file.extension === "md" &&
+					!extensionPaths.has(file.path) &&
+					(vaultIsRoot ||
+						file.path.startsWith(this.settings.vaultPath))
+				) {
+					frontmatterBased.push(file);
+				}
+			}
+		} else {
+			frontmatterBased = this.vault
+				.getMarkdownFiles()
+				.filter(
+					(f) =>
+						!extensionPaths.has(f.path) &&
+						(vaultIsRoot ||
+							f.path.startsWith(this.settings.vaultPath)) &&
+						this.metadataCache.getCache(f.path)?.frontmatter?.[
+							"excalidraw-plugin"
+						] === "parsed",
+				);
+		}
+
+		return [...extensionBased, ...frontmatterBased];
 	}
 
 	/**
@@ -188,15 +247,7 @@ export default class Publisher {
 			: [];
 
 		const excalidrawFiles = this.settings.useExcalidraw
-			? this.vault
-					.getMarkdownFiles()
-					.filter(
-						(f) =>
-							(f.path.endsWith(".excalidraw") ||
-								f.path.endsWith(".excalidraw.md")) &&
-							(vaultIsRoot ||
-								f.path.startsWith(this.settings.vaultPath)),
-					)
+			? this.getExcalidrawFiles(vaultIsRoot)
 			: [];
 
 		for (const f of excalidrawFiles) {
@@ -305,10 +356,7 @@ export default class Publisher {
 				return this.settings.useCanvas;
 			}
 
-			if (
-				f.file.path.endsWith(".excalidraw") ||
-				f.file.path.endsWith(".excalidraw.md")
-			) {
+			if (f.isExcalidrawFile()) {
 				return this.settings.useExcalidraw;
 			}
 

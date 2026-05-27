@@ -49,7 +49,14 @@
 			filePath.endsWith(".excalidraw.md")
 		)
 			return "excalidraw";
-		if (filePath.endsWith(".md")) return "markdown";
+		if (filePath.endsWith(".md")) {
+			const frontmatter =
+				publisher.metadataCache.getCache(filePath)?.frontmatter;
+			if (frontmatter?.["excalidraw-plugin"] === "parsed") {
+				return "excalidraw";
+			}
+			return "markdown";
+		}
 
 		return "unknown";
 	}

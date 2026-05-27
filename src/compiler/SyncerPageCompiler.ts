@@ -149,6 +149,14 @@ export class SyncerPageCompiler {
 	async generateMarkdown(file: PublishFile): Promise<TCompiledFile> {
 		const vaultFileText = await file.cachedRead();
 
+		// ORDER MATTERS!
+		const COMPILE_STEPS: TCompilerStep[] = [
+			this.convertFrontMatter,
+			this.convertIntegrations,
+			this.linkTargeting,
+			this.astTransform,
+		];
+
 		if (file.getType() === "base") {
 			const blobs = await this.resolveEmbeddedAssets(file);
 
@@ -170,13 +178,19 @@ export class SyncerPageCompiler {
 			return [vaultFileText, { blobs }];
 		}
 
-		// ORDER MATTERS!
-		const COMPILE_STEPS: TCompilerStep[] = [
-			this.convertFrontMatter,
-			this.convertIntegrations,
-			this.linkTargeting,
-			this.astTransform,
-		];
+		if (file.isExcalidrawFile()) {
+			const strippedText = this.stripExcalidrawData(vaultFileText);
+
+			const compiledText = await this.runCompilerSteps(
+				file,
+				COMPILE_STEPS,
+			)(strippedText);
+
+			const [text, blobs] =
+				await this.convertFileLinks(file)(compiledText);
+
+			return [text, { blobs }];
+		}
 
 		const compiledText = await this.runCompilerSteps(
 			file,
@@ -186,6 +200,21 @@ export class SyncerPageCompiler {
 		const [text, blobs] = await this.convertFileLinks(file)(compiledText);
 
 		return [text, { blobs }];
+	}
+
+	/**
+	 * Strips the Excalidraw data section from the file content.
+	 * Everything from "# Excalidraw Data" to the end of the file is removed.
+	 *
+	 * @param text - The raw file content.
+	 * @returns The content with the Excalidraw data section removed.
+	 */
+	private stripExcalidrawData(text: string): string {
+		const excalidrawDataIndex = text.search(/^#+ +Excalidraw +Data\b/im);
+
+		if (excalidrawDataIndex === -1) return text;
+
+		return text.slice(0, excalidrawDataIndex).trimEnd();
 	}
 
 	private stripVaultPath(text: string): string {
@@ -374,10 +403,16 @@ export class SyncerPageCompiler {
 
 		const cache = this.metadataCache.getCache(file.getPath());
 
-		// Excalidraw files reference images via [[wikilinks]] (in the
-		// "## Embedded Files" section), which Obsidian registers as links,
-		// not embeds. Check cache.links for asset references.
-		if (file.getType() === "excalidraw" && cache?.links) {
+		// Extension-based Excalidraw files (.excalidraw / .excalidraw.md)
+		// reference images via [[wikilinks]] (in the "## Embedded Files"
+		// section), which Obsidian registers as links, not embeds.
+		// Check cache.links for asset references.
+		if (
+			file.getType() === "excalidraw" &&
+			(file.file.name.endsWith(".excalidraw") ||
+				file.file.name.endsWith(".excalidraw.md")) &&
+			cache?.links
+		) {
 			for (const link of cache.links) {
 				try {
 					const linkedFile = this.metadataCache.getFirstLinkpathDest(
